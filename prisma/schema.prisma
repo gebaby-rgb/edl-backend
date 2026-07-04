@@ -1,0 +1,466 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// Lookup Tables
+model CaseStatus {
+  id          String         @id @default(uuid()) @db.Uuid
+  code        String         @unique
+  nameAr      String         @map("name_ar")
+  nameEn      String         @map("name_en")
+  description String?
+  cases       Case[]
+  timelineFrom CaseTimeline[] @relation("TimelineFrom")
+  timelineTo   CaseTimeline[] @relation("TimelineTo")
+
+  @@map("case_statuses")
+}
+
+model Priority {
+  id     String @id @default(uuid()) @db.Uuid
+  code   String @unique
+  nameAr String @map("name_ar")
+  nameEn String @map("name_en")
+  cases  Case[]
+
+  @@map("priorities")
+}
+
+model Material {
+  id               String  @id @default(uuid()) @db.Uuid
+  code             String  @unique
+  nameAr           String  @map("name_ar")
+  nameEn           String  @map("name_en")
+  category         String
+  basePricePerUnit Float   @map("base_price_per_unit")
+  isActive         Boolean @default(true) @map("is_active")
+  cases            Case[]
+
+  @@map("materials")
+}
+
+model Shade {
+  id       String @id @default(uuid()) @db.Uuid
+  code     String @unique
+  name     String
+  category String
+  cases    Case[]
+
+  @@map("shades")
+}
+
+model ProductionStageType {
+  id            String            @id @default(uuid()) @db.Uuid
+  code          String            @unique
+  nameAr        String            @map("name_ar")
+  nameEn        String            @map("name_en")
+  sequenceOrder Int               @unique @map("sequence_order")
+  stages        ProductionStage[]
+
+  @@map("production_stage_types")
+}
+
+model PaymentMethod {
+  id       String    @id @default(uuid()) @db.Uuid
+  code     String    @unique
+  nameAr   String    @map("name_ar")
+  nameEn   String    @map("name_en")
+  payments Payment[]
+
+  @@map("payment_methods")
+}
+
+model PaymentStatus {
+  id       String    @id @default(uuid()) @db.Uuid
+  code     String    @unique
+  nameAr   String    @map("name_ar")
+  nameEn   String    @map("name_en")
+  payments Payment[]
+
+  @@map("payment_statuses")
+}
+
+// Core RBAC Decoupled tables
+model Role {
+  id          String           @id @default(uuid()) @db.Uuid
+  name        String           @unique
+  users       User[]
+  permissions RolePermission[]
+  createdAt   DateTime         @default(now()) @map("created_at")
+  updatedAt   DateTime         @updatedAt @map("updated_at")
+
+  @@map("roles")
+}
+
+model Permission {
+  id            String           @id @default(uuid()) @db.Uuid
+  name          String           @unique
+  permissionKey String           @unique @map("permission_key")
+  description   String?
+  roles         RolePermission[]
+  createdAt     DateTime         @default(now()) @map("created_at")
+  updatedAt     DateTime         @updatedAt @map("updated_at")
+
+  @@map("permissions")
+}
+
+model RolePermission {
+  roleId       String     @map("role_id") @db.Uuid
+  permissionId String     @map("permission_id") @db.Uuid
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+model User {
+  id           String        @id @default(uuid()) @db.Uuid
+  phone        String        @unique
+  email        String?       @unique
+  fullName     String        @map("full_name")
+  passwordHash String        @map("password_hash")
+  roleId       String        @map("role_id") @db.Uuid
+  role         Role          @relation(fields: [roleId], references: [id])
+  isActive     Boolean       @default(true) @map("is_active")
+  createdAt    DateTime      @default(now()) @map("created_at")
+  updatedAt    DateTime      @updatedAt @map("updated_at")
+  deletedAt    DateTime?     @map("deleted_at")
+  doctor       Doctor?
+  technician   Technician?
+  caseFiles    CaseFile[]
+  caseTimeline CaseTimeline[]
+  caseMessages CaseMessage[]
+  confirmedPayments Payment[] @relation("ConfirmedBy")
+  courierDeliveries DeliveryOrder[] @relation("Courier")
+  sessions     Session[]
+  devices      Device[]
+
+  @@index([roleId])
+  @@map("users")
+}
+
+model Doctor {
+  id             String     @id @default(uuid()) @db.Uuid
+  userId         String     @unique @map("user_id") @db.Uuid
+  user           User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  specialization String?
+  bio            String?
+  clinics        Clinic[]
+  cases          Case[]
+  templates      Template[]
+  createdAt      DateTime   @default(now()) @map("created_at")
+  updatedAt      DateTime   @updatedAt @map("updated_at")
+
+  @@map("doctors")
+}
+
+model Clinic {
+  id        String   @id @default(uuid()) @db.Uuid
+  doctorId  String   @map("doctor_id") @db.Uuid
+  doctor    Doctor   @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+  name      String
+  address   String
+  city      String   @default("Assiut")
+  phone     String?
+  cases     Case[]
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([doctorId])
+  @@map("clinics")
+}
+
+model Case {
+  id                String            @id @default(uuid()) @db.Uuid
+  caseNumber        String            @unique @map("case_number")
+  doctorId          String            @map("doctor_id") @db.Uuid
+  doctor            Doctor            @relation(fields: [doctorId], references: [id])
+  clinicId          String            @map("clinic_id") @db.Uuid
+  clinic            Clinic            @relation(fields: [clinicId], references: [id])
+  patientReference  String            @map("patient_reference")
+  toothSelection    Json              @map("tooth_selection")
+  shadeId           String            @map("shade_id") @db.Uuid
+  shade             Shade             @relation(fields: [shadeId], references: [id])
+  materialId        String            @map("material_id") @db.Uuid
+  material          Material          @relation(fields: [materialId], references: [id])
+  priorityId        String            @map("priority_id") @db.Uuid
+  priority          Priority          @relation(fields: [priorityId], references: [id])
+  dueDate           DateTime          @map("due_date")
+  statusId          String            @map("status_id") @db.Uuid
+  status            CaseStatus        @relation(fields: [statusId], references: [id])
+  createdAt         DateTime          @default(now()) @map("created_at")
+  updatedAt         DateTime          @updatedAt @map("updated_at")
+  deletedAt         DateTime?         @map("deleted_at")
+  
+  files             CaseFile[]
+  messages          CaseMessage[]
+  timeline          CaseTimeline[]
+  quotation         Quotation?
+  invoice           Invoice?
+  productionStages  ProductionStage[]
+  deliveryOrder     DeliveryOrder?
+  warrantyCard      WarrantyCard?
+
+  @@index([doctorId])
+  @@index([clinicId])
+  @@index([shadeId])
+  @@index([materialId])
+  @@index([priorityId])
+  @@index([statusId])
+  @@map("cases")
+}
+
+model CaseFile {
+  id         String   @id @default(uuid()) @db.Uuid
+  caseId     String   @map("case_id") @db.Uuid
+  case       Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  fileName   String   @map("file_name")
+  fileType   String   @map("file_type")
+  fileUrl    String   @map("file_url")
+  fileSize   Int      @map("file_size")
+  uploadedBy String   @map("uploaded_by") @db.Uuid
+  user       User     @relation(fields: [uploadedBy], references: [id])
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([caseId])
+  @@index([uploadedBy])
+  @@map("case_files")
+}
+
+model CaseMessage {
+  id          String       @id @default(uuid()) @db.Uuid
+  caseId      String       @map("case_id") @db.Uuid
+  case        Case         @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  senderId    String       @map("sender_id") @db.Uuid
+  sender      User         @relation(fields: [senderId], references: [id])
+  messageText String       @map("message_text")
+  isSystemMsg Boolean      @default(false) @map("is_system_msg")
+  createdAt   DateTime     @default(now()) @map("created_at")
+  attachments Attachment[]
+
+  @@index([caseId])
+  @@index([senderId])
+  @@map("case_messages")
+}
+
+model Attachment {
+  id        String      @id @default(uuid()) @db.Uuid
+  messageId String      @map("message_id") @db.Uuid
+  message   CaseMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  fileName  String      @map("file_name")
+  fileUrl   String      @map("file_url")
+  fileSize  Int         @map("file_size")
+  createdAt DateTime    @default(now()) @map("created_at")
+
+  @@index([messageId])
+  @@map("attachments")
+}
+
+model CaseTimeline {
+  id           String     @id @default(uuid()) @db.Uuid
+  caseId       String     @map("case_id") @db.Uuid
+  case         Case       @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  statusFromId String     @map("status_from_id") @db.Uuid
+  statusFrom   CaseStatus @relation("TimelineFrom", fields: [statusFromId], references: [id])
+  statusToId   String     @map("status_to_id") @db.Uuid
+  statusTo     CaseStatus @relation("TimelineTo", fields: [statusToId], references: [id])
+  changedBy    String     @map("changed_by") @db.Uuid
+  user         User       @relation(fields: [changedBy], references: [id])
+  notes        String?
+  createdAt    DateTime   @default(now()) @map("created_at")
+
+  @@index([caseId])
+  @@index([statusFromId])
+  @@index([statusToId])
+  @@index([changedBy])
+  @@map("case_timeline")
+}
+
+model Quotation {
+  id          String   @id @default(uuid()) @db.Uuid
+  caseId      String   @unique @map("case_id") @db.Uuid
+  case        Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  totalAmount Float    @map("total_amount")
+  discount    Float    @default(0.0)
+  tax         Float    @default(0.0)
+  finalAmount Float    @map("final_amount")
+  status      String   @default("Pending")
+  validUntil  DateTime @map("valid_until")
+  notes       String?
+  invoice     Invoice?
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@map("quotations")
+}
+
+model Invoice {
+  id            String        @id @default(uuid()) @db.Uuid
+  caseId        String        @unique @map("case_id") @db.Uuid
+  case          Case          @relation(fields: [caseId], references: [id])
+  quotationId   String        @unique @map("quotation_id") @db.Uuid
+  quotation     Quotation     @relation(fields: [quotationId], references: [id])
+  invoiceNumber String        @unique @map("invoice_number")
+  totalAmount   Float         @map("total_amount")
+  status        String        @default("Unpaid")
+  dueDate       DateTime      @map("due_date")
+  items         InvoiceItem[]
+  payments      Payment[]
+  createdAt     DateTime      @default(now()) @map("created_at")
+  updatedAt     DateTime      @updatedAt @map("updated_at")
+
+  @@map("invoices")
+}
+
+model InvoiceItem {
+  id          String  @id @default(uuid()) @db.Uuid
+  invoiceId   String  @map("invoice_id") @db.Uuid
+  invoice     Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  description String
+  quantity    Int
+  unitPrice   Float   @map("unit_price")
+  totalPrice  Float   @map("total_price")
+
+  @@index([invoiceId])
+  @@map("invoice_items")
+}
+
+model Payment {
+  id                   String        @id @default(uuid()) @db.Uuid
+  invoiceId            String        @map("invoice_id") @db.Uuid
+  invoice              Invoice       @relation(fields: [invoiceId], references: [id])
+  amount               Float
+  paymentMethodId      String        @map("payment_method_id") @db.Uuid
+  paymentMethod        PaymentMethod @relation(fields: [paymentMethodId], references: [id])
+  transactionReference String?       @map("transaction_reference")
+  statusId             String        @map("status_id") @db.Uuid
+  status               PaymentStatus @relation(fields: [statusId], references: [id])
+  confirmedBy          String?       @map("confirmed_by") @db.Uuid
+  user                 User?         @relation("ConfirmedBy", fields: [confirmedBy], references: [id])
+  createdAt            DateTime      @default(now()) @map("created_at")
+
+  @@index([invoiceId])
+  @@index([paymentMethodId])
+  @@index([statusId])
+  @@index([confirmedBy])
+  @@map("payments")
+}
+
+model Technician {
+  id               String            @id @default(uuid()) @db.Uuid
+  userId           String            @unique @map("user_id") @db.Uuid
+  user             User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  specialty        String
+  currentWorkload  Int               @default(0) @map("current_workload")
+  productionStages ProductionStage[]
+  createdAt        DateTime          @default(now()) @map("created_at")
+  updatedAt        DateTime          @updatedAt @map("updated_at")
+
+  @@map("technicians")
+}
+
+model ProductionStage {
+  id           String              @id @default(uuid()) @db.Uuid
+  caseId       String              @map("case_id") @db.Uuid
+  case         Case                @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  technicianId String?             @map("technician_id") @db.Uuid
+  technician   Technician?         @relation(fields: [technicianId], references: [id])
+  stageTypeId  String              @map("stage_type_id") @db.Uuid
+  stageType    ProductionStageType @relation(fields: [stageTypeId], references: [id])
+  status       String              @default("Pending")
+  startedAt    DateTime?           @map("started_at")
+  completedAt  DateTime?           @map("completed_at")
+  qualityScore Int?                @map("quality_score")
+  qualityNotes String?             @map("quality_notes")
+
+  @@index([caseId])
+  @@index([technicianId])
+  @@index([stageTypeId])
+  @@map("production_stages")
+}
+
+model DeliveryOrder {
+  id           String    @id @default(uuid()) @db.Uuid
+  caseId       String    @unique @map("case_id") @db.Uuid
+  case         Case      @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  courierId    String    @map("courier_id") @db.Uuid
+  courier      User      @relation("Courier", fields: [courierId], references: [id])
+  status       String    @default("Pending")
+  pickupTime   DateTime? @map("pickup_time")
+  deliveryTime DateTime? @map("delivery_time")
+  signatureUrl String?   @map("signature_url")
+  notes        String?
+
+  @@index([courierId])
+  @@map("delivery_orders")
+}
+
+model WarrantyCard {
+  id             String   @id @default(uuid()) @db.Uuid
+  caseId         String   @unique @map("case_id") @db.Uuid
+  case           Case     @relation(fields: [caseId], references: [id])
+  warrantyNumber String   @unique @map("warranty_number")
+  issueDate      DateTime @map("issue_date")
+  expiryDate     DateTime @map("expiry_date")
+  status         String   @default("Active")
+
+  @@map("warranty_cards")
+}
+
+model Template {
+  id           String   @id @default(uuid()) @db.Uuid
+  doctorId     String   @map("doctor_id") @db.Uuid
+  doctor       Doctor   @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+  templateName String   @map("template_name")
+  defaults     Json
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@index([doctorId])
+  @@map("templates")
+}
+
+model AuditLog {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String?  @map("user_id") @db.Uuid
+  action    String
+  tableName String   @map("table_name")
+  recordId  String   @map("record_id") @db.Uuid
+  oldValues Json?    @map("old_values")
+  newValues Json?    @map("new_values")
+  ipAddress String?  @map("ip_address")
+  userAgent String?  @map("user_agent")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@map("audit_logs")
+}
+
+model Session {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String   @map("token_hash")
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@map("sessions")
+}
+
+model Device {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  pushToken String   @map("push_token")
+  platform  String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@map("devices")
+}
