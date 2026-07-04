@@ -1,9 +1,12 @@
+/* eslint-disable @typescript-eslint/no-var-requires */
 import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
 import { ExpressAdapter } from '@nestjs/platform-express';
 import { AppModule } from '../src/app.module';
-import * as express from 'express';
 import type { IncomingMessage, ServerResponse } from 'http';
+
+// Use require to avoid ESM/CJS mismatch with express
+const express = require('express');
 
 const server = express();
 let app: any;
@@ -20,7 +23,7 @@ async function bootstrap() {
   isBootstrapped = true;
 }
 
-export default async function handler(req: IncomingMessage, res: ServerResponse) {
+module.exports = async function handler(req: IncomingMessage, res: ServerResponse) {
   try {
     await bootstrap();
     server(req, res);
@@ -29,4 +32,4 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     res.writeHead(500, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ error: 'Server initialization failed', details: String(err) }));
   }
-}
+};
